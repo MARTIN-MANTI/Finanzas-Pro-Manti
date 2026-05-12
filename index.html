@@ -21,11 +21,10 @@
         body { background-color: var(--bg); color: #f1f5f9; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; overscroll-behavior-y: contain; -webkit-tap-highlight-color: transparent; }
         .glass-card { background: var(--card); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 1.5rem; }
         .num-pad-btn { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 1rem; height: 70px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 800; }
-        .pin-dot { width: 15px; height: 15px; border-radius: 50%; border: 2px solid #6366f1; transition: 0.2s; }
-        .pin-dot.filled { background: #6366f1; box-shadow: 0 0 15px #6366f1; }
+        .status-pill { padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 900; text-transform: uppercase; }
         .editable-input { background: transparent; border: none; outline: none; color: inherit; width: 100%; }
-        .status-pagado { opacity: 0.5; filter: grayscale(50%); border-left: 4px solid #6366f1 !important; }
         ::-webkit-scrollbar { display: none; }
+        .accordion-content { transition: max-height 0.3s ease-out; overflow: hidden; }
     </style>
 </head>
 <body>
@@ -58,7 +57,14 @@
             const [isLocked, setIsLocked] = useState(true);
             const [view, setView] = useState('summary');
             const [pinInput, setPinInput] = useState('');
-            const [data, setData] = useState({ userName: 'Martin', securityPin: null, incomes: [], expenses: [], installments: [] });
+            const [openSections, setOpenSections] = useState({ inc: true, exp: true, cuo: true });
+            const [data, setData] = useState({ 
+                userName: 'MARTIN', 
+                securityPin: null, 
+                incomes: [], 
+                expenses: [], 
+                installments: [] 
+            });
 
             useEffect(() => {
                 async function load() {
@@ -90,11 +96,9 @@
                 if (newPin.length === 4) {
                     if (!data.securityPin) {
                         setData({...data, securityPin: newPin});
-                        setIsLocked(false);
-                        setPinInput('');
+                        setIsLocked(false); setPinInput('');
                     } else if (newPin === data.securityPin) {
-                        setIsLocked(false);
-                        setPinInput('');
+                        setIsLocked(false); setPinInput('');
                     } else {
                         setTimeout(() => setPinInput(''), 400);
                     }
@@ -103,27 +107,65 @@
 
             const addItem = (type) => {
                 const newItem = { id: Date.now(), title: 'Nuevo', amount: 0 };
-                if (type === 'installments') { newItem.monthlyFee = 0; newItem.paid = 1; newItem.total = 12; newItem.status = ''; }
+                if (type === 'installments') { 
+                    newItem.monthlyFee = 0; newItem.paid = 1; newItem.total = 12; 
+                    newItem.dueDay = new Date().getDate(); newItem.isPaidMonth = false;
+                }
                 setData(prev => ({ ...prev, [type]: [newItem, ...prev[type]] }));
             };
 
-            const editItem = (type, id, field, val) => {
-                const cleanVal = (field === 'amount' || field === 'monthlyFee' || field === 'paid' || field === 'total') ? Number(val) : val;
-                setData(prev => ({
-                    ...prev,
-                    [type]: prev[type].map(item => item.id === id ? {...item, [field]: cleanVal} : item)
-                }));
+            const getStatus = (item) => {
+                if (item.isPaidMonth) return { label: 'Pagado', color: 'bg-emerald-500/20 text-emerald-500' };
+                const today = new Date().getDate();
+                if (today > item.dueDay) return { label: 'Vencido', color: 'bg-rose-500/20 text-rose-500' };
+                if (item.dueDay - today <= 3) return { label: 'Pendiente', color: 'bg-amber-500/20 text-amber-500' };
+                return { label: 'Vigente', color: 'bg-indigo-500/20 text-indigo-500' };
+            };
+
+            const ChartView = () => {
+                const canvasRef = useRef(null);
+                useEffect(() => {
+                    const ctx = canvasRef.current.getContext('2d');
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Ingresos', 'Gastos'],
+                            datasets: [{
+                                data: [totals.inc, totals.exp],
+                                backgroundColor: ['#10b981', '#f43f5e'],
+                                borderWidth: 0,
+                                cutout: '80%'
+                            }]
+                        },
+                        options: { plugins: { legend: { display: false } } }
+                    });
+                }, []);
+                return (
+                    <div className="space-y-8 animate-in fade-in duration-500">
+                        <div className="glass-card p-8 flex flex-col items-center">
+                            <div className="relative w-48 h-48">
+                                <canvas ref={canvasRef}></canvas>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Gasto Total</span>
+                                    <span className="text-xl font-black">${totals.exp.toLocaleString()}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
             };
 
             if (isLocked) {
                 return (
-                    <div className="min-h-screen flex flex-col items-center justify-center p-8">
-                        <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-8 shadow-lg shadow-indigo-500/20"><Icon name="lock" size={28} className="text-white"/></div>
-                        <h2 className="text-lg font-black text-indigo-400 mb-10 uppercase tracking-widest">{data.securityPin ? "Ingresar PIN" : "Crear PIN"}</h2>
-                        <div className="flex gap-6 mb-16">{[0,1,2,3].map(i => <div key={i} className={`pin-dot ${pinInput.length > i ? 'filled' : ''}`}></div>)}</div>
-                        <div className="grid grid-cols-3 gap-4 w-full max-w-xs">
+                    <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-[#050810]">
+                        <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mb-8 shadow-2xl shadow-indigo-500/40"><Icon name="shield-check" size={40} className="text-white"/></div>
+                        <h2 className="text-sm font-black text-indigo-400 mb-10 uppercase tracking-[0.3em]">{data.securityPin ? "Acceso Seguro" : "Configurar PIN"}</h2>
+                        <div className="flex gap-4 mb-16">{[0,1,2,3].map(i => <div key={i} className={`pin-dot ${pinInput.length > i ? 'filled' : ''}`}></div>)}</div>
+                        <div className="grid grid-cols-3 gap-5 w-full max-w-xs">
                             {[1,2,3,4,5,6,7,8,9, 'C', 0, 'del'].map(n => (
-                                <button key={n} onClick={() => n === 'del' ? setPinInput(pinInput.slice(0,-1)) : n === 'C' ? setPinInput('') : handlePin(n)} className="num-pad-btn text-white">{n === 'del' ? <Icon name="delete"/> : n}</button>
+                                <button key={n} onClick={() => n === 'del' ? setPinInput(pinInput.slice(0,-1)) : n === 'C' ? setPinInput('') : handlePin(n)} className="num-pad-btn text-white active:scale-90 transition-transform">
+                                    {n === 'del' ? <Icon name="delete"/> : n}
+                                </button>
                             ))}
                         </div>
                     </div>
@@ -131,94 +173,120 @@
             }
 
             return (
-                <div className="min-h-screen pb-24">
+                <div className="min-h-screen pb-32">
                     <header className="p-6 flex justify-between items-center max-w-md mx-auto">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><Icon name="wallet" size={16} className="text-white"/></div>
-                            <input value={data.userName} onChange={e => setData({...data, userName: e.target.value})} className="editable-input font-black text-white uppercase tracking-tighter w-32" />
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg"><Icon name="wallet" size={20} className="text-white"/></div>
+                            <input value={data.userName} onChange={e => setData({...data, userName: e.target.value.toUpperCase()})} className="editable-input font-black text-white text-xl tracking-tighter w-40" />
                         </div>
-                        <button onClick={() => setIsLocked(true)} className="p-2 bg-white/5 rounded-lg text-slate-500"><Icon name="log-out" size={18}/></button>
+                        <button onClick={() => setIsLocked(true)} className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-slate-500"><Icon name="lock" size={18}/></button>
                     </header>
 
-                    <main className="px-6 max-w-md mx-auto space-y-8">
-                        <div className="glass-card p-8 border-t-2 border-indigo-500 shadow-2xl">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Balance Disponible</p>
-                            <h2 className={`text-5xl font-black tracking-tighter ${totals.bal >= 0 ? 'text-white' : 'text-rose-500'}`}>${totals.bal.toLocaleString('es-AR')}</h2>
-                        </div>
-
-                        {/* INGRESOS */}
-                        <section className="space-y-3">
-                            <div className="flex justify-between items-center px-1">
-                                <h3 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Ingresos</h3>
-                                <button onClick={() => addItem('incomes')} className="bg-emerald-600 text-white px-3 py-1 rounded text-[9px] font-black">+ AGREGAR</button>
-                            </div>
-                            {data.incomes.map(i => (
-                                <div key={i.id} className="glass-card p-4 flex justify-between items-center border-l-4 border-emerald-500">
-                                    <input value={i.title} onChange={e => editItem('incomes', i.id, 'title', e.target.value)} className="editable-input font-bold text-sm" />
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-emerald-500 font-bold">$</span>
-                                        <input type="number" value={i.amount} onChange={e => editItem('incomes', i.id, 'amount', e.target.value)} className="editable-input w-24 text-right font-black text-lg" />
-                                        <button onClick={() => setData({...data, incomes: data.incomes.filter(x => x.id !== i.id)})} className="text-slate-700 ml-2"><Icon name="trash-2" size={14}/></button>
-                                    </div>
+                    <main className="px-6 max-w-md mx-auto space-y-6">
+                        {view === 'summary' ? (
+                            <>
+                                <div className="glass-card p-8 border-t-2 border-indigo-500 shadow-2xl relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10"><Icon name="trending-up" size={80}/></div>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Balance Neto</p>
+                                    <h2 className="text-5xl font-black tracking-tighter text-white break-all">
+                                        ${totals.bal.toLocaleString('es-AR')}
+                                    </h2>
                                 </div>
-                            ))}
-                        </section>
 
-                        {/* GASTOS FIJOS */}
-                        <section className="space-y-3">
-                            <div className="flex justify-between items-center px-1">
-                                <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Gastos Fijos</h3>
-                                <button onClick={() => addItem('expenses')} className="bg-rose-600 text-white px-3 py-1 rounded text-[9px] font-black">+ AGREGAR</button>
-                            </div>
-                            {data.expenses.map(i => (
-                                <div key={i.id} className="glass-card p-4 flex justify-between items-center border-l-4 border-rose-500">
-                                    <input value={i.title} onChange={e => editItem('expenses', i.id, 'title', e.target.value)} className="editable-input font-bold text-sm" />
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-rose-500 font-bold">$</span>
-                                        <input type="number" value={i.amount} onChange={e => editItem('expenses', i.id, 'amount', e.target.value)} className="editable-input w-24 text-right font-black text-lg" />
-                                        <button onClick={() => setData({...data, expenses: data.expenses.filter(x => x.id !== i.id)})} className="text-slate-700 ml-2"><Icon name="trash-2" size={14}/></button>
-                                    </div>
-                                </div>
-                            ))}
-                        </section>
-
-                        {/* CUOTAS / TARJETAS */}
-                        <section className="space-y-3">
-                            <div className="flex justify-between items-center px-1">
-                                <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Cuotas / Tarjetas</h3>
-                                <button onClick={() => addItem('installments')} className="bg-amber-600 text-white px-3 py-1 rounded text-[9px] font-black">+ AGREGAR</button>
-                            </div>
-                            {data.installments.map(i => (
-                                <div key={i.id} className={`glass-card p-4 space-y-4 border-l-4 border-amber-500 ${i.status === 'paid' ? 'status-pagado' : ''}`}>
-                                    <div className="flex justify-between">
-                                        <input value={i.title} onChange={e => editItem('installments', i.id, 'title', e.target.value)} className="editable-input font-black text-xs uppercase" />
-                                        <button onClick={() => setData({...data, installments: data.installments.filter(x => x.id !== i.id)})} className="text-slate-700"><Icon name="trash-2" size={14}/></button>
-                                    </div>
-                                    <div className="flex justify-between items-end">
-                                        <div>
-                                            <p className="text-[8px] font-bold text-slate-500 uppercase">Mensual</p>
-                                            <div className="flex items-center">
-                                                <span className="text-amber-500 font-bold">$</span>
-                                                <input type="number" value={i.monthlyFee} onChange={e => editItem('installments', i.id, 'monthlyFee', e.target.value)} className="editable-input w-24 font-black text-xl" />
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full">
-                                            <button onClick={() => editItem('installments', i.id, 'paid', i.paid - 1)} className="text-slate-400">-</button>
-                                            <span className="text-[10px] font-black text-indigo-400">{i.paid}/{i.total}</span>
-                                            <button onClick={() => editItem('installments', i.id, 'paid', i.paid + 1)} className="text-slate-400">+</button>
-                                        </div>
-                                    </div>
-                                    <button onClick={() => editItem('installments', i.id, 'status', i.status === 'paid' ? '' : 'paid')} className="w-full py-2 bg-white/5 rounded-lg text-[9px] font-black text-slate-400 uppercase">
-                                        {i.status === 'paid' ? '✓ Pagado este mes' : 'Marcar como Pagado'}
+                                {/* SECCIÓN INGRESOS */}
+                                <section className="space-y-3">
+                                    <button onClick={() => setOpenSections({...openSections, inc: !openSections.inc})} className="w-full flex justify-between items-center px-2">
+                                        <h3 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-2">
+                                            <Icon name={openSections.inc ? "chevron-down" : "chevron-right"} size={14}/> Ingresos
+                                        </h3>
+                                        <span className="text-[10px] font-bold text-emerald-500/50">${totals.inc.toLocaleString()}</span>
                                     </button>
-                                </div>
-                            ))}
-                        </section>
+                                    {openSections.inc && (
+                                        <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                                            <button onClick={() => addItem('incomes')} className="w-full py-3 border-2 border-dashed border-emerald-500/20 rounded-2xl text-[10px] font-black text-emerald-500/40 uppercase hover:bg-emerald-500/5 transition-colors">+ Nuevo Ingreso</button>
+                                            {data.incomes.map(i => (
+                                                <div key={i.id} className="glass-card p-4 flex justify-between items-center border-l-4 border-emerald-500">
+                                                    <input value={i.title} onChange={e => setData({...data, incomes: data.incomes.map(x => x.id === i.id ? {...x, title: e.target.value} : x)})} className="editable-input font-bold text-sm" />
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-emerald-500 font-black">$</span>
+                                                        <input type="number" value={i.amount} onChange={e => setData({...data, incomes: data.incomes.map(x => x.id === i.id ? {...x, amount: e.target.value} : x)})} className="editable-input w-24 text-right font-black text-lg" />
+                                                        <button onClick={() => setData({...data, incomes: data.incomes.filter(x => x.id !== i.id)})} className="text-slate-800 ml-2"><Icon name="trash" size={14}/></button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </section>
+
+                                {/* SECCIÓN CUOTAS */}
+                                <section className="space-y-3">
+                                    <button onClick={() => setOpenSections({...openSections, cuo: !openSections.cuo})} className="w-full flex justify-between items-center px-2">
+                                        <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-2">
+                                            <Icon name={openSections.cuo ? "chevron-down" : "chevron-right"} size={14}/> Cuotas y Tarjetas
+                                        </h3>
+                                    </button>
+                                    {openSections.cuo && (
+                                        <div className="space-y-3">
+                                            <button onClick={() => addItem('installments')} className="w-full py-3 border-2 border-dashed border-amber-500/20 rounded-2xl text-[10px] font-black text-amber-500/40 uppercase">+ Nueva Tarjeta/Cuota</button>
+                                            {data.installments.map(i => {
+                                                const status = getStatus(i);
+                                                return (
+                                                    <div key={i.id} className="glass-card p-5 space-y-4 border-l-4 border-amber-500">
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="space-y-1">
+                                                                <input value={i.title} onChange={e => setData({...data, installments: data.installments.map(x => x.id === i.id ? {...x, title: e.target.value} : x)})} className="editable-input font-black text-xs uppercase tracking-tighter" />
+                                                                <span className={`status-pill ${status.color}`}>{status.label}</span>
+                                                            </div>
+                                                            <button onClick={() => setData({...data, installments: data.installments.filter(x => x.id !== i.id)})} className="text-slate-800"><Icon name="x" size={16}/></button>
+                                                        </div>
+                                                        
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div>
+                                                                <p className="text-[8px] font-black text-slate-500 uppercase mb-1">Cuota Mensual</p>
+                                                                <div className="flex items-center text-amber-500 font-black">
+                                                                    <span>$</span>
+                                                                    <input type="number" value={i.monthlyFee} onChange={e => setData({...data, installments: data.installments.map(x => x.id === i.id ? {...x, monthlyFee: e.target.value} : x)})} className="editable-input text-lg ml-1" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-[8px] font-black text-slate-500 uppercase mb-1">Vence Día</p>
+                                                                <input type="number" value={i.dueDay} onChange={e => setData({...data, installments: data.installments.map(x => x.id === i.id ? {...x, dueDay: Number(e.target.value)} : x)})} className="editable-input text-right font-black text-lg" />
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                                                            <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-xl">
+                                                                <input type="number" value={i.paid} onChange={e => setData({...data, installments: data.installments.map(x => x.id === i.id ? {...x, paid: e.target.value} : x)})} className="editable-input w-6 text-center text-[10px] font-black text-indigo-400" />
+                                                                <span className="text-slate-600 text-[10px]">/</span>
+                                                                <input type="number" value={i.total} onChange={e => setData({...data, installments: data.installments.map(x => x.id === i.id ? {...x, total: e.target.value} : x)})} className="editable-input w-6 text-center text-[10px] font-black text-slate-400" />
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => setData({...data, installments: data.installments.map(x => x.id === i.id ? {...x, isPaidMonth: !x.isPaidMonth} : x)})}
+                                                                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${i.isPaidMonth ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/5 text-slate-400'}`}
+                                                            >
+                                                                {i.isPaidMonth ? '✓ Pagado' : 'Marcar Pago'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </section>
+                            </>
+                        ) : (
+                            <ChartView />
+                        )}
                     </main>
 
-                    <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-64 h-14 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl flex items-center justify-around shadow-2xl">
-                        <button onClick={() => setView('summary')} className={`flex flex-col items-center ${view === 'summary' ? 'text-indigo-400' : 'text-slate-500'}`}><Icon name="layout-grid"/><span className="text-[8px] font-black uppercase">Panel</span></button>
-                        <button onClick={() => setView('reports')} className={`flex flex-col items-center ${view === 'reports' ? 'text-indigo-400' : 'text-slate-500'}`}><Icon name="pie-chart"/><span className="text-[8px] font-black uppercase">Stats</span></button>
+                    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-72 h-16 bg-slate-900/80 backdrop-blur-2xl border border-white/10 rounded-3xl flex items-center justify-around shadow-2xl z-50">
+                        <button onClick={() => setView('summary')} className={`flex flex-col items-center gap-1 transition-all ${view === 'summary' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}>
+                            <Icon name="layout-grid" size={20}/><span className="text-[7px] font-black uppercase tracking-widest">Panel</span>
+                        </button>
+                        <div className="w-[1px] h-6 bg-white/5"></div>
+                        <button onClick={() => setView('reports')} className={`flex flex-col items-center gap-1 transition-all ${view === 'reports' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}>
+                            <Icon name="pie-chart" size={20}/><span className="text-[7px] font-black uppercase tracking-widest">Stats</span>
+                        </button>
                     </nav>
                 </div>
             );
@@ -226,14 +294,6 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
-    </script>
-
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW error', err));
-        });
-      }
     </script>
 </body>
 </html>
