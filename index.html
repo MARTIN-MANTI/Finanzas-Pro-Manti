@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#050810">
+    <link rel="manifest" href="manifest.json">
+    <title>Finanzas Pro</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb@8/build/umd.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&display=swap');
+        :root { --bg: #050810; --card: rgba(13, 20, 38, 0.7); }
+        body { 
+            background-color: var(--bg); 
+            color: #f1f5f9; 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            margin: 0;
+            overscroll-behavior-y: contain; /* Evita el refresco accidental al deslizar */
+        }
+        .glass-card { background: var(--card); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 1.5rem; }
+        .num-pad-btn { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 1rem; height: 70px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 800; }
+        .num-pad-btn:active { background: rgba(99, 102, 241, 0.2); transform: scale(0.95); }
+        .pin-dot { width: 15px; height: 15px; border-radius: 50%; border: 2px solid #6366f1; transition: 0.2s; }
+        .pin-dot.filled { background: #6366f1; box-shadow: 0 0 15px #6366f1; }
+        .editable-input { background: transparent; border: none; outline: none; color: inherit; width: 100%; }
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- BASE DE DATOS (IndexedDB) ---
+        const dbPromise = idb.openDB('FinanzasProDB', 1, {
+            upgrade(db) { db.createObjectStore('settings'); },
+        });
+
+        const Icon = ({ name, size = 18, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (iconRef.current && window.lucide) {
+                    iconRef.current.innerHTML = '';
+                    const i = document.createElement('i');
+                    i.setAttribute('data-lucide', name);
+                    i.style.width = `${size}px`; i.style.height = `${size}px`;
+                    i.className = className;
+                    iconRef.current.appendChild(i);
+                    lucide.createIcons({ node: iconRef.current });
+                }
+            }, [name]);
+            return <span ref={iconRef} className="inline-flex items-center"></span>;
+        };
+
+        const App = () => {
+            const [isLocked, setIsLocked] = useState(true);
+            const [pinInput, setPinInput] = useState('');
+            const [data, setData] = useState({ 
+                userName: 'Martin', 
+                securityPin: null, 
+                incomes: [], 
+                expenses: [], 
+                installments: [] 
+            });
+
+            // Cargar datos
+            useEffect(() => {
+                async function load() {
+                    const db = await dbPromise;
+                    const saved = await db.get('settings', 'userData');
+                    if (saved) setData(saved);
+                }
+                load();
+            }, []);
+
+            // Guardar datos automáticamente
+            useEffect(() => {
+                async function save() {
+                    const db = await dbPromise;
+                    await db.put('settings', data, 'userData');
+                }
+                save();
+            }, [data]);
+
+            const handlePin = (n) => {
+                const newPin = pinInput + n;
+                if (newPin.length <= 4) setPinInput(newPin);
+                if (newPin.length === 4) {
+                    if (!data.securityPin) {
+                        setData({...data, securityPin: newPin});
+                        setIsLocked(false);
+                        setPinInput('');
+                    } else if (newPin === data.securityPin) {
+                        setIsLocked(false);
+                        setPinInput('');
+                    } else {
+                        setTimeout(() => setPinInput(''), 400);
+                    }
+                }
+            };
+
+            const totals = useMemo(() => {
+                const inc = data.incomes.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+                const expF = data.expenses.reduce((a, b) => a + (Number(b.amount) || 0), 0);
+                const expC = data.installments.reduce((a, b) => a + (Number(b.monthlyFee) || 0), 0);
+                return { inc, exp: expF + expC, bal: inc - (expF + expC) };
+            }, [data]);
+
+            const addItem = (type) => {
+                const newItem = { id: Date.now(), title: 'Nuevo', amount: 0 };
+                if (type === 'installments') { newItem.monthlyFee = 0; newItem.paid = 1; newItem.total = 12; }
+                setData(prev => ({ ...prev, [type]: [newItem, ...prev[type]] }));
+            };
+
+            if (isLocked) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-8">
+                        <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-8 shadow-lg shadow-indigo-500/20">
+                            <Icon name="lock" size={28} className="text-white"/>
+                        </div>
+                        <h2 className="text-lg font-black text-indigo-400 mb-10 uppercase tracking-widest">
+                            {data.securityPin ? "Ingresar PIN" : "Crear PIN de Seguridad"}
+                        </h2>
+                        <div className="flex gap-6 mb-16">
+                            {[0,1,2,3].map(i => <div key={i} className={`pin-dot ${pinInput.length > i ? 'filled' : ''}`}></div>)}
+                        </div>
+                        <div className="grid grid-cols-3 gap-4 w-full max-w-xs">
+                            {[1,2,3,4,5,6,7,8,9].map(n => (
+                                <button key={n} onClick={() => handlePin(n)} className="num-pad-btn text-white">{n}</button>
+                            ))}
+                            <button onClick={() => setPinInput('')} className="num-pad-btn text-slate-500"><Icon name="x"/></button>
+                            <button onClick={() => handlePin(0)} className="num-pad-btn text-white">0</button>
+                            <button onClick={() => setPinInput(pinInput.slice(0,-1))} className="num-pad-btn text-indigo-400"><Icon name="delete"/></button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="p-6 max-w-md mx-auto space-y-6 pb-20">
+                    <header className="flex justify-between items-center py-4">
+                        <h1 className="text-xl font-black italic tracking-tighter text-white uppercase">Finanzas Pro</h1>
+                        <button onClick={() => setIsLocked(true)} className="p-2 bg-white/5 rounded-lg"><Icon name="log-out" size={18}/></button>
+                    </header>
+
+                    <div className="glass-card p-8 border-t-2 border-indigo-500 shadow-2xl">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Balance Disponible</p>
+                        <h2 className={`text-4xl font-black tracking-tighter ${totals.bal >= 0 ? 'text-white' : 'text-rose-500'}`}>
+                            ${totals.bal.toLocaleString('es-AR')}
+                        </h2>
+                    </div>
+
+                    <section className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Ingresos</h3>
+                            <button onClick={() => addItem('incomes')} className="text-[10px] font-black bg-emerald-600 px-3 py-1 rounded text-white">+ AÑADIR</button>
+                        </div>
+                        {data.incomes.map(item => (
+                            <div key={item.id} className="glass-card p-4 flex justify-between items-center border-l-4 border-emerald-500">
+                                <input value={item.title} onChange={e => {
+                                    const newArr = data.incomes.map(x => x.id === item.id ? {...x, title: e.target.value} : x);
+                                    setData({...data, incomes: newArr});
+                                }} className="editable-input font-bold text-sm" />
+                                <div className="flex items-center gap-2">
+                                    <span className="text-emerald-500 font-black">$</span>
+                                    <input type="number" value={item.amount} onChange={e => {
+                                        const newArr = data.incomes.map(x => x.id === item.id ? {...x, amount: e.target.value} : x);
+                                        setData({...data, incomes: newArr});
+                                    }} className="editable-input w-20 text-right font-black" />
+                                </div>
+                            </div>
+                        ))}
+                    </section>
+                    
+                    <p className="text-center text-[10px] text-slate-600 font-bold uppercase tracking-widest pt-10">Paso 2 Completado - Modo Seguro Activo</p>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW error', err));
+        });
+      }
+    </script>
+</body>
+</html>
